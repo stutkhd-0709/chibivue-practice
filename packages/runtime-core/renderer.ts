@@ -3,8 +3,21 @@ renderのロジックのみを持つオブジェクトを生成するための
 ファクトリ関数を実装
 */
 
-export interface RendererOptions<HostNode = RendererNode> {
-  setElementText(node: HostNode, text: string): void;
+import { VNode } from './vnode'
+
+export interface RendererOptions<
+  HostNode = RendererNode,
+  HostElement = RendererElement
+  > {
+    patchProp(el: HostElement, key: string, value: any): void;
+
+    createElement(type: string): HostNode
+
+    createText(text: string): HostNode
+
+    setElementText(node: HostNode, text: string): void
+
+    insert(child: HostNode, parent: HostNode, anchor?: HostNode | null) : void
 }
 
 export interface RendererNode {
@@ -24,9 +37,32 @@ export type RootRenderFunction<HostElement = RendererElement> = (
 // 直接nodeOpsを書くのではなく、抽象化したinterfaceに依存させてる
 export function createRenderer(options: RendererOptions) {
   // 分割代入でhostSetElementTextに値を格納
-  const { setElementText: hostSetElementText } = options
-  const render: RootRenderFunction = (message, container) => {
-    hostSetElementText(container, message) // 今回はメッセージを挿入するだけなのでこういう実装になっている
+  const {
+    patchProp: hostPatchProp,
+    createElement: hostCreateElement,
+    createText: hostCreateText,
+    insert: hostInsert,
+  } = options
+
+  function renderVNode(vnode: VNode | string) {
+    if (typeof vnode === 'string') return hostCreateText(vnode)
+    const el = hostCreateElement(vnode.type)
+
+    Object.entries(vnode.props).forEach(([key, value]) => {
+      hostPatchProp(el, key, value)
+    })
+
+    for (const child of vnode.children) {
+      const childEl = renderVNode(child)
+      hostInsert(childEl, el)
+    }
+
+    return el
+  }
+
+  const render: RootRenderFunction = (vnode, container) => {
+    const el = renderVNode(vnode)
+    hostInsert(el, container)
   }
 
   return { render };

@@ -19,8 +19,9 @@ export function createAppAPI<HostElement>(
         // ! -> 非nullアサーション演算子
         // rootComponentはrenderを持たない可能性がある(型的に)
         // そうするとTSがエラーを返すが、それを防ぐために明示的にnullじゃないことを示す
-        const message = rootComponent.render!()
-        render(message, rootContainer)
+        const vnode = rootComponent.render!()
+        console.log(vnode); // ログを見てみる
+        render(vnode, rootContainer)
       }
     }
 

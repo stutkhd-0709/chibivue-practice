@@ -1,3 +1,4 @@
+import { ReactiveEffect } from '../reactivity'
 import { Component } from "./component"
 import { RootRenderFunction } from "./renderer"
 
@@ -19,9 +20,15 @@ export function createAppAPI<HostElement>(
         // ! -> 非nullアサーション演算子
         // rootComponentはrenderを持たない可能性がある(型的に)
         // そうするとTSがエラーを返すが、それを防ぐために明示的にnullじゃないことを示す
-        const vnode = rootComponent.render!()
-        console.log(vnode); // ログを見てみる
-        render(vnode, rootContainer)
+        const componentRender = rootComponent.setup!()
+
+        const updateComponent = () => {
+          const vnode = componentRender()
+          render(vnode, rootContainer)
+        }
+
+        const effect = new ReactiveEffect(updateComponent)
+        effect.run()
       }
     }
 

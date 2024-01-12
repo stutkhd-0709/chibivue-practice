@@ -1,5 +1,11 @@
 /*
-DOMを操作するためのオブジェクトを実装
+DOM操作するためのオブジェクトを実装
+DOM = Document Object Element -> ORMみたいなやつか
+NodeはElementを拡張したもの
+documentにある全てのオブジェクトはNodeである
+ElementはNodeの一種類
+ex. div, p, a, imgなどなど
+他のNodeにはdocument, DocumentFragmentとかある
 */
 import { RendererOptions } from "../runtime-core/renderer";
 

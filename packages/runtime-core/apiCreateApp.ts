@@ -1,4 +1,3 @@
-import { ReactiveEffect } from '../reactivity'
 import { Component } from "./component"
 import { RootRenderFunction } from "./renderer"
 
@@ -16,19 +15,10 @@ export function createAppAPI<HostElement>(
 ): CreateAppFunction<HostElement> {
   return function createApp(rootComponent) {
     const app: App = {
+      // appオブジェクトにmount関数を持たせる
       mount(rootContainer: HostElement) {
-        // ! -> 非nullアサーション演算子
-        // rootComponentはrenderを持たない可能性がある(型的に)
-        // そうするとTSがエラーを返すが、それを防ぐために明示的にnullじゃないことを示す
-        const componentRender = rootComponent.setup!()
-
-        const updateComponent = () => {
-          const vnode = componentRender()
-          render(vnode, rootContainer)
-        }
-
-        const effect = new ReactiveEffect(updateComponent)
-        effect.run()
+        // createAppAPIの引数のrender関数
+        render(rootComponent, rootContainer)
       }
     }
 

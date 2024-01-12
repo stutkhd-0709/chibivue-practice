@@ -54,8 +54,6 @@ export function patchEvent(
       invokers[rawName] = undefined
     }
   }
-
-  console.log(invokers)
 }
 
 function parseName(rowName: string): string {

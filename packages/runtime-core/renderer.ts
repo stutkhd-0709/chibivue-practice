@@ -3,13 +3,14 @@ renderのロジックのみを持つオブジェクトを生成するための
 ファクトリ関数を実装
 */
 
-import { VNode, normalizeVNode, Text } from './vnode'
+import { VNode, normalizeVNode, Text, createVNode } from './vnode'
 import { ReactiveEffect } from '../reactivity';
-import { Component } from "./component"
+import { Component, ComponentInternalInstance, InternalRenderFunction, createComponentInstance } from "./component"
+import { initProps, updateProps } from './componentProps';
 
 // factory
 export type RootRenderFunction<HostElement = RendererElement> = (
-  component: Component,
+  vnode: Component,
   container: HostElement
 ) => void
 
@@ -26,7 +27,9 @@ export interface RendererOptions<
 
     setElementText(node: HostNode, text: string): void
 
-    insert(child: HostNode, parent: HostNode, anchor?: HostNode | null) : void
+    insert(child: HostNode, parent: HostNode, anchor?: HostNode | null) : void,
+
+    parentNode(node: HostNode): HostNode
 }
 
 export interface RendererNode {
@@ -47,6 +50,7 @@ export function createRenderer(options: RendererOptions) {
     createText: hostCreateText,
     setElementText: hostSetText,
     insert: hostInsert,
+    parentNode: hostParentNode,
   } = options
 
   // DOMの差分比較して、差分だけ更新したDOMを生成(他はそのままで全体を再レンダリングしてない)
@@ -55,9 +59,12 @@ export function createRenderer(options: RendererOptions) {
     if (type === Text) {
       // 文字を差し替える部分
       processText(n1, n2, container)
-    } else {
-      // それ以外
+    } else if (typeof type === 'string'){
       processElement(n1, n2, container)
+    } else if (typeof type === 'object' ) {
+      processComponent(n1, n2, container)
+    } else {
+      // do nothing
     }
   }
 
@@ -84,7 +91,7 @@ export function createRenderer(options: RendererOptions) {
     el = vnode.el = hostCreateElement(type as string)
 
     // 親の配下(el)にchildをmount
-    mountChildren(vnode.children, el) // TODO
+    mountChildren(vnode.children as VNode[], el)
 
     if (props) {
       // onClickなどVue特有のものがあったらpatchしてる
@@ -148,28 +155,109 @@ export function createRenderer(options: RendererOptions) {
     }
   }
 
+  const processComponent = (
+    n1: VNode | null,
+    n2: VNode,
+    container: RendererElement
+  ) => {
+    if (n1 == null) {
+      mountComponent(n2, container)
+    } else {
+      updateComponent(n1, n2)
+    }
+  }
+
+  // VNode -> 仮想DOM elementの情報をobjectとして扱ってる
+  // container -> 実際のElement, ここに挿入する
+  const mountComponent = (initialVNode: VNode, container: RendererElement) => {
+    /*
+      やること
+      1. コンポーネントのインスタンス生成
+      2. setupの実行と、その結果をインスタンスに保持
+      3. ReactiveEffectの生成とそれをインスタンスに保持
+    */
+    const instance: ComponentInternalInstance = (
+      initialVNode.component = createComponentInstance(initialVNode)
+    )
+
+    // init props
+    const { props } = instance.vnode // vnodeにはinitialVNodeが格納されてる
+    // instance.propsにreactiveにしたpropsを格納
+    initProps(instance, props)
+
+    // ここに来るのはtypeがobject => componentが前提のため
+    const component = initialVNode.type as Component
+    if (component.setup) {
+      // componentインスタンスにsetup(=render)を持たせる
+      instance.render = component.setup(instance.props, {
+        emit: instance.emit
+      }
+      ) as InternalRenderFunction
+    }
+    setupRenderEffect(instance, initialVNode, container)
+  }
+
+  // effectは今までrender関数で実行してたのを、インスタンスの状態を活用して移植した
+  const setupRenderEffect = (
+    instance: ComponentInternalInstance,
+    initialVNode: VNode,
+    container: RendererElement,
+  ) => {
+    // 更新時に実行する関数なので、mount, patchの両方に対応できる形になってる
+    const componentUpdateFn = () => {
+      const { render } = instance
+      if (!instance.isMounted) {
+        // mount process
+        const subTree = (instance.subTree = normalizeVNode(render()))
+        // 初回なのでそのままmountする
+        patch(null, subTree, container)
+        // initialVNode.elは初期値はundefinedなので、すぐにrenderingするsubTreeのelをそのまま参照させる
+        // 初期値はcreateVNode関数を見るとわかる
+        initialVNode.el = subTree.el
+        instance.isMounted = true
+      } else {
+        // patch process -> 更新されるたびに呼ばれる
+        // vnodeはcomponentを呼び出す親のrender関数
+        let { next, vnode } = instance
+
+        if (next) {
+          next.el = vnode.el
+          next.component = instance
+          instance.vnode = next
+          instance.next = null
+          updateProps(instance, next.props)
+        } else {
+          // 新しいVNodeがない場合に、既存のVNodeをnextに格納
+          next = vnode
+        }
+
+        const prevTree = instance.subTree
+        const nextTree = normalizeVNode(render())
+        instance.subTree = nextTree
+
+        // 差分比較
+        patch(prevTree, nextTree, hostParentNode(prevTree.el!))
+        next.el = nextTree.el
+      }
+    }
+
+    // 更新時実行する関数(componentUpdateFn)を登録
+    const effect = (instance.effect = new ReactiveEffect(componentUpdateFn))
+    const update = (instance.update = () => { effect.run() }) // instance.updateに登録
+    update()
+  }
+
+  const updateComponent = (n1: VNode, n2: VNode) => {
+    const instance = (n2.component = n1.component)!
+    instance.next = n2
+    instance.update()
+  }
+
   // rootComponent: createAppの第１引数, setupプロパティを持つオブジェクト
   // container: mountする場所 createAppの.mountで指定した場所(runtime_dom/indexでElementに変換されてる)
   const render: RootRenderFunction = (rootComponent, container) => {
-    // render関数そのもの
-    const componentRender = rootComponent.setup!()
-
-    let n1: VNode | null = null
-
-    // reactiveになるたびに実行される
-    const updateComponent = () => {
-      // render関数で仮想DOM生成
-      const n2 = componentRender()
-      // 比較
-      patch(n1, n2, container)
-      // 更新
-      console.log(n2)
-      n1 = n2
-    }
-
-    const effect = new ReactiveEffect(updateComponent)
-
-    effect.run()
+    const vnode = createVNode(rootComponent, {}, [])
+    patch(null, vnode, container)
   }
 
   return { render };

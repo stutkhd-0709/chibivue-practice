@@ -1,5 +1,7 @@
-// typof Textは'symbol'を返す
-export type VNodeTypes = string | typeof Text;
+import { ComponentInternalInstance } from "./component"
+
+// objectはcomponent自体を受け取れるようにするため
+export type VNodeTypes = string | typeof Text | object
 
 // 無名の一意の値
 // なぜSymbolを使うのかはよくわからない
@@ -11,6 +13,7 @@ export interface VNode<HostNode = any> {
   props: VNodeProps | null
   children: VNodeNormalizedChildren
   el: HostNode | undefined // 実際の DOM への参照を持たせる
+  component: ComponentInternalInstance | null
 }
 
 export interface VNodeProps {
@@ -31,7 +34,13 @@ export function createVNode(
   props: VNodeProps | null,
   children: VNodeNormalizedChildren,
 ): VNode {
-  const vnode: VNode = { type, props, children, el: undefined }
+  const vnode: VNode = {
+    type,
+    props,
+    children: children,
+    el: undefined,
+    component: null,
+  }
   return vnode
 }
 

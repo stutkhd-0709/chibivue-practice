@@ -25,3 +25,6 @@ export const createApp = ((...args) => {
 
   return app
 }) as CreateAppFunction<Element>
+
+// compileで使用するため
+export { h } from '../runtime-core'

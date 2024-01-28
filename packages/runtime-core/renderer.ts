@@ -5,8 +5,8 @@ renderのロジックのみを持つオブジェクトを生成するための
 
 import { VNode, normalizeVNode, Text, createVNode } from './vnode'
 import { ReactiveEffect } from '../reactivity';
-import { Component, ComponentInternalInstance, InternalRenderFunction, createComponentInstance } from "./component"
-import { initProps, updateProps } from './componentProps';
+import { Component, ComponentInternalInstance, InternalRenderFunction, createComponentInstance, setupComponent } from "./component"
+import { updateProps } from './componentProps';
 
 // factory
 export type RootRenderFunction<HostElement = RendererElement> = (
@@ -170,30 +170,10 @@ export function createRenderer(options: RendererOptions) {
   // VNode -> 仮想DOM elementの情報をobjectとして扱ってる
   // container -> 実際のElement, ここに挿入する
   const mountComponent = (initialVNode: VNode, container: RendererElement) => {
-    /*
-      やること
-      1. コンポーネントのインスタンス生成
-      2. setupの実行と、その結果をインスタンスに保持
-      3. ReactiveEffectの生成とそれをインスタンスに保持
-    */
     const instance: ComponentInternalInstance = (
       initialVNode.component = createComponentInstance(initialVNode)
     )
-
-    // init props
-    const { props } = instance.vnode // vnodeにはinitialVNodeが格納されてる
-    // instance.propsにreactiveにしたpropsを格納
-    initProps(instance, props)
-
-    // ここに来るのはtypeがobject => componentが前提のため
-    const component = initialVNode.type as Component
-    if (component.setup) {
-      // componentインスタンスにsetup(=render)を持たせる
-      instance.render = component.setup(instance.props, {
-        emit: instance.emit
-      }
-      ) as InternalRenderFunction
-    }
+    setupComponent(instance)
     setupRenderEffect(instance, initialVNode, container)
   }
 

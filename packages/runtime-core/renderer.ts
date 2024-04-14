@@ -185,10 +185,10 @@ export function createRenderer(options: RendererOptions) {
   ) => {
     // 更新時に実行する関数なので、mount, patchの両方に対応できる形になってる
     const componentUpdateFn = () => {
-      const { render } = instance
+      const { render, setupState } = instance
       if (!instance.isMounted) {
         // mount process
-        const subTree = (instance.subTree = normalizeVNode(render()))
+        const subTree = (instance.subTree = normalizeVNode(render(setupState))) // setupStateを渡す
         // 初回なのでそのままmountする
         patch(null, subTree, container)
         // initialVNode.elは初期値はundefinedなので、すぐにrenderingするsubTreeのelをそのまま参照させる
@@ -212,7 +212,7 @@ export function createRenderer(options: RendererOptions) {
         }
 
         const prevTree = instance.subTree
-        const nextTree = normalizeVNode(render())
+        const nextTree = normalizeVNode(render(setupState)) // setupStateを渡す
         instance.subTree = nextTree
 
         // 差分比較

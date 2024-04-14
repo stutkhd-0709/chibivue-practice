@@ -22,11 +22,13 @@ export interface ComponentInternalInstance {
 
   props: Data // 実際に親から渡されたデータを保持 (今回の場合は場合は `{ message: "hello" }`のようにな)
 
-  emit: (event: string, ...args: any[]) => void
+  emit: (event: string, ...args: any[]) => void,
+
+  setupState: Data // setupの結果はオブジェクトの場合はここに格納することにする
 }
 
 export type InternalRenderFunction = {
-  (): VNodeChild
+  (ctx: Data): VNodeChild // 引数でctxを受け取れるように
 }
 
 // constructor
@@ -76,10 +78,18 @@ export const setupComponent = (instance: ComponentInternalInstance) => {
   const component = instance.type as Component
   if (component.setup) {
     // componentインスタンスにsetup(=render)を持たせる
-    instance.render = component.setup(instance.props, {
+    const setupResult = component.setup(instance.props, {
       emit: instance.emit
+    }) as InternalRenderFunction
+
+    // setupResultの型によって分岐する
+    if (typeof setupResult === 'function') {
+      instance.render = setupResult
+    } else if (typeof setupResult === 'object' && setupResult !== null) {
+      instance.setupState = setupResult
+    } else {
+      // do nothing
     }
-    ) as InternalRenderFunction
   }
 
   if (compile && !component.render) {

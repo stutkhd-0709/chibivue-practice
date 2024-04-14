@@ -1,6 +1,8 @@
 import {
   AttributeNode,
   ElementNode,
+  InterpolationNode,
+  DirectiveNode,
   NodeTypes,
   Position,
   SourceLocation,
@@ -52,7 +54,9 @@ function parseChildren(
     const s = context.source
     let node: TemplateChildNode | undefined = undefined
 
-    if (s[0] === '<') {
+    if (startsWith(s, "{{")) {
+      node = parseInterpolation(context)
+    } else if (s[0] === '<') {
       // sが"<"で始まり、かつ次の文字がアルファベットの場合は要素としてパースする
       if (/[a-z]/i.test(s[1])) {
         node = parseElement(context, ancestors) // TODO
@@ -127,17 +131,18 @@ function startsWithEndTagOpen(source: string, tag: string): boolean {
 
 function parseText(context: ParserContext): TextNode {
   // "<"(タグの開始(開始・終了を問わず)まで読み進め、何文字読んだかを元にTextデータの終了時点のindexを算出する)
-  const endToken = '<'
-  let endIndex = context.source.length
-  const index = context.source.indexOf(endToken, 1) // １は指定した文字列以降から始める(<以降)
+  const endTokens = ['<', '{{'] // {{が出現したらparseTextは終わり
 
-  // index===-1は見つからなかった場合
-  if (index !== -1 && endIndex > index) {
-    endIndex = index
+  let endIndex = context.source.length
+
+  for (let i = 0; i < endTokens.length; i++) {
+    const index = context.source.indexOf(endTokens[i], 1) // １は指定した文字列以降で該当文字を調べる
+    if (index !== -1 && endIndex > index) {
+      endIndex = index
+    }
   }
 
   const start = getCursor(context) // loc用
-
   // endIndexの情報をもとにTextデータをパースする
   const content = parseTextData(context, endIndex)
 
@@ -155,17 +160,56 @@ function parseTextData(context: ParserContext, length: number): string {
   return rawText
 }
 
+function parseInterpolation(
+  context: ParserContext,
+): InterpolationNode | undefined {
+  const [open, close] = ['{{', '}}']
+  const closeIndex = context.source.indexOf(close, open.length)
+  if (closeIndex === -1) return undefined
+
+  const start = getCursor(context)
+  advanceBy(context, open.length)
+
+  const innerStart = getCursor(context)
+  const innerEnd = getCursor(context)
+  const rawContentLength = closeIndex - open.length
+  const rawContent = context.source.slice(0, rawContentLength)
+  const preTrimContent = parseTextData(context, rawContentLength)
+
+  const content = preTrimContent.trim()
+
+  const startOffset = preTrimContent.indexOf(content)
+
+  if (startOffset > 0) {
+    advancePositionWithMutation(innerStart, rawContent, startOffset)
+  }
+  const endOffset =
+    rawContentLength - (preTrimContent.length - content.length - startOffset)
+  advancePositionWithMutation(innerEnd, rawContent, endOffset)
+  advanceBy(context, close.length)
+
+  return {
+    type: NodeTypes.INTERPOLATION,
+    content,
+    loc: getSelection(context, start),
+  }
+}
+
 // 以下はユーティリティ関数
 
-// パーサーのcontextの位置を進める
+/**
+ * パーサーのcontextの位置を進める
+*/
 function advanceBy(context: ParserContext, numberOfCharacters: number): void {
   const { source } = context
   advancePositionWithMutation(context, source, numberOfCharacters)
   context.source = source.slice(numberOfCharacters)
 }
 
-// posの計算をする
-// 引数でもらったposのオブジェクトを破壊的に更新する
+/**
+ * posの計算をする  
+ * 引数でもらったposのオブジェクトを破壊的に更新する
+ */
 function advancePositionWithMutation(
   pos: Position,
   source: string,
@@ -280,8 +324,10 @@ function parseTag(context: ParserContext, type: TagType): ElementNode {
   }
 }
 
-// 属性全体(複数属性)のパース
-// eg. `id="app" class="container" style="color: red"`
+/**
+ * 属性全体(複数属性)のパース  
+ * eg. `id="app" class="container" style="color: red"`
+*/
 function parseAttributes(
   context: ParserContext,
   type: TagType,
@@ -319,7 +365,7 @@ type AttributeValue =
 function parseAttribute(
   context: ParserContext,
   nameSet: Set<string>,
-): AttributeNode {
+): AttributeNode | DirectiveNode {
   // Name
   const start = getCursor(context)
   // htmlから属性を取得
@@ -342,6 +388,28 @@ function parseAttribute(
 
   const loc = getSelection(context, start)
 
+  if (/^(v-[A-Za-z0-9-]|@)/.test(name)) {
+    const match =
+      /(?:^v-([a-z0-9-]+))?(?:(?::|^\.|^@|^#)(\[[^\]]+\]|[^\.]+))?(.+)?$/i.exec(
+        name
+      )!;
+
+    let dirName = match[1] || (startsWith(name, "@") ? "on" : "");
+
+    let arg = "";
+
+    if (match[2]) arg = match[2];
+
+    return {
+      type: NodeTypes.DIRECTIVE,
+      name: dirName,
+      exp: value?.content ?? "",
+      loc,
+      arg,
+    };
+  }
+
+
   return {
     type: NodeTypes.ATTRIBUTE,
     name,
@@ -357,6 +425,13 @@ function parseAttribute(
 // 属性のvalueをパース
 // valueのクォートはシングルでもダブルでもパースできように実装していく
 // 頑張ってクォートで囲まれたvalueを取り出したりしているだけです
+
+/**
+ * 属性のvalueをパース  
+ * valueのクォートはシングルでもダブルでもパースできように実装していく  
+ * 頑張ってクォートで囲まれたvalueを取り出したりしているだけです  
+ *
+*/
 function parseAttributeValue(context: ParserContext): AttributeValue {
   const start = getCursor(context)
   let content: string

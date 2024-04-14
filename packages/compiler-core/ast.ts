@@ -5,7 +5,10 @@
 export const enum NodeTypes {
   ELEMENT,
   TEXT,
+  INTERPOLATION, // マスタッシュ構文 {{  }}
+
   ATTRIBUTE,
+  DIRECTIVE, // @click, v-bind, v-modelなど
 }
 
 // 全てのNodeはtypeとlocを持っている
@@ -20,7 +23,7 @@ export interface Node {
 export interface ElementNode extends Node {
   type: NodeTypes.ELEMENT
   tag: string // eg. "div"
-  props: Array<AttributeNode> // eg. { name: "class", value: { content: "container" } }
+  props: Array<AttributeNode | DirectiveNode> // eg. { name: "class", value: { content: "container" } }とDirective
   children: TemplateChildNode[]
   isSelfClosing: boolean // eg. <img /> => true
 }
@@ -34,11 +37,25 @@ export interface AttributeNode extends Node {
   value: TextNode | undefined
 }
 
-export type TemplateChildNode = ElementNode | TextNode
+export type TemplateChildNode = ElementNode | TextNode | InterpolationNode
 
 export interface TextNode extends Node {
   type: NodeTypes.TEXT
   content: string
+}
+
+export interface InterpolationNode extends Node {
+  type: NodeTypes.INTERPOLATION,
+  content: string // マスタッシュの中に記述された内容(今回はsetupで定義された単一の変数名が入る)
+}
+
+export interface DirectiveNode extends Node {
+  type: NodeTypes.DIRECTIVE
+  // v-name:arg="exp"という形で表す
+  // eg. v-on:click="increment"の場合は、{ name: 'on', arg: 'click', exp="increment" }
+  name: string
+  arg: string
+  exp: string
 }
 
 // locationの情報、Nodeはこの情報を持つ

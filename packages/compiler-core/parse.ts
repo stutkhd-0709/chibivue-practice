@@ -331,7 +331,7 @@ function parseTag(context: ParserContext, type: TagType): ElementNode {
 function parseAttributes(
   context: ParserContext,
   type: TagType,
-): AttributeNode[] {
+): (AttributeNode | DirectiveNode)[] {
   const props = []
   const attributeNames = new Set<string>()
 

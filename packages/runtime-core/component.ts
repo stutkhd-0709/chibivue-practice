@@ -48,6 +48,7 @@ export function createComponentInstance(
     isMounted: false,
     propsOptions: type.props || {},
     props: {},
+    setupState: {},
     emit: null! // to be set immediately
   }
 

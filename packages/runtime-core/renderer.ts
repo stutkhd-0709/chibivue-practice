@@ -5,7 +5,7 @@ renderのロジックのみを持つオブジェクトを生成するための
 
 import { VNode, normalizeVNode, Text, createVNode } from './vnode'
 import { ReactiveEffect } from '../reactivity';
-import { Component, ComponentInternalInstance, InternalRenderFunction, createComponentInstance, setupComponent } from "./component"
+import { Component, ComponentInternalInstance, createComponentInstance, setupComponent } from "./component"
 import { updateProps } from './componentProps';
 
 // factory

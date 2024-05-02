@@ -4,7 +4,7 @@ import { baseParse } from './parse'
 
 export function baseCompile(
   template: string,
-  option: Required<CompilerOptions>
+  option: Required<CompilerOptions>,
 ) {
   const parseResult = baseParse(template.trim())
   const code = generate(parseResult, option)

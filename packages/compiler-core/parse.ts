@@ -1,8 +1,8 @@
 import {
   AttributeNode,
+  DirectiveNode,
   ElementNode,
   InterpolationNode,
-  DirectiveNode,
   NodeTypes,
   Position,
   SourceLocation,
@@ -53,25 +53,70 @@ function parseChildren(
   while (!isEnd(context, ancestors)) {
     const s = context.source
     let node: TemplateChildNode | undefined = undefined
-
-    if (startsWith(s, "{{")) {
+    if (startsWith(s, '{{')) {
       node = parseInterpolation(context)
     } else if (s[0] === '<') {
       // sが"<"で始まり、かつ次の文字がアルファベットの場合は要素としてパースする
       if (/[a-z]/i.test(s[1])) {
-        node = parseElement(context, ancestors) // TODO
+        node = parseElement(context, ancestors)
       }
     }
 
-      if (!node) {
-        // 上記の条件に当てはまらなかった場合はTextNodeとしてパース
-        node = parseText(context) // TODO
-      }
+    if (!node) {
+      // 上記の条件に当てはまらなかった場合はTextNodeとしてパース
+      node = parseText(context)
+    }
 
-      pushNode(nodes, node)
+    pushNode(nodes, node)
   }
 
   return nodes
+}
+
+// 以下はユーティリティ関数
+
+/**
+ * パーサーのcontextの位置を進める
+*/
+function advanceBy(context: ParserContext, numberOfCharacters: number): void {
+  const { source } = context
+  advancePositionWithMutation(context, source, numberOfCharacters)
+  context.source = source.slice(numberOfCharacters)
+}
+/**
+ * posの計算をする  
+ * 引数でもらったposのオブジェクトを破壊的に更新する
+ */
+function advancePositionWithMutation(
+  pos: Position,
+  source: string,
+  numberOfCharacters: number = source.length,
+): Position {
+  let linesCount = 0
+  let lastNewLinePos = -1
+  for (let i = 0; i < numberOfCharacters; i++) {
+    if (source.charCodeAt(i) === 10 /* newline char code */) {
+      linesCount++
+      lastNewLinePos = i
+    }
+  }
+
+  pos.offset += numberOfCharacters
+  pos.line += linesCount
+
+  // columnは改行されると0になる
+  /*
+    Hello worldのwで考える
+    -> この場合はcolumn = 7
+    Hello\nworldのwは改行されてるのでcolumn = 0
+  */
+  // columnの初期値は1でoffsetは0なので、同じ行の場合は1ずつズレる
+  pos.column =
+    lastNewLinePos === -1
+      ? pos.column + numberOfCharacters
+      : numberOfCharacters - lastNewLinePos
+
+  return pos
 }
 
 function isEnd(context: ParserContext, ancestors: ElementNode[]): boolean {
@@ -101,6 +146,13 @@ function startsWith(source: string, searchString: string): boolean {
   return source.startsWith(searchString)
 }
 
+function advanceSpaces(context: ParserContext): void {
+  const match = /^[\t\r\n\f ]+/.exec(context.source)
+  if (match) {
+    advanceBy(context, match[0].length)
+  }
+}
+
 function pushNode(nodes: TemplateChildNode[], node: TemplateChildNode): void {
   // nodeTypeがTextのものが連続している場合は結合してあげる
   if (node.type === NodeTypes.TEXT) {
@@ -113,53 +165,6 @@ function pushNode(nodes: TemplateChildNode[], node: TemplateChildNode): void {
 
   nodes.push(node)
 }
-
-function last<T>(xs: T[]): T | undefined {
-  return xs[xs.length - 1]
-}
-
-function startsWithEndTagOpen(source: string, tag: string): boolean {
-  return (
-    startsWith(source, '</') &&
-    // これ2じゃなくて1ではない？？
-    // sourceが<div>から始まって、tagが'div'だったら1が正しい気がする
-    source.slice(2, 2 + tag.length).toLowerCase() === tag.toLowerCase() &&
-    // ちゃんと>で閉じられてるか確認
-    /[\t\r\n\f />]/.test(source[2 + tag.length] || '>')
-  )
-}
-
-function parseText(context: ParserContext): TextNode {
-  // "<"(タグの開始(開始・終了を問わず)まで読み進め、何文字読んだかを元にTextデータの終了時点のindexを算出する)
-  const endTokens = ['<', '{{'] // {{が出現したらparseTextは終わり
-
-  let endIndex = context.source.length
-
-  for (let i = 0; i < endTokens.length; i++) {
-    const index = context.source.indexOf(endTokens[i], 1) // １は指定した文字列以降で該当文字を調べる
-    if (index !== -1 && endIndex > index) {
-      endIndex = index
-    }
-  }
-
-  const start = getCursor(context) // loc用
-  // endIndexの情報をもとにTextデータをパースする
-  const content = parseTextData(context, endIndex)
-
-  return {
-    type: NodeTypes.TEXT,
-    content,
-    loc: getSelection(context, start)
-  }
-}
-
-// contentとlengthを元にtextを抽出する
-function parseTextData(context: ParserContext, length: number): string {
-  const rawText = context.source.slice(0, length)
-  advanceBy(context, length)
-  return rawText
-}
-
 function parseInterpolation(
   context: ParserContext,
 ): InterpolationNode | undefined {
@@ -195,81 +200,40 @@ function parseInterpolation(
   }
 }
 
-// 以下はユーティリティ関数
+function parseText(context: ParserContext): TextNode {
+  // "<"(タグの開始(開始・終了を問わず)まで読み進め、何文字読んだかを元にTextデータの終了時点のindexを算出する)
+  const endTokens = ['<', '{{'] // {{が出現したらparseTextは終わり
 
-/**
- * パーサーのcontextの位置を進める
-*/
-function advanceBy(context: ParserContext, numberOfCharacters: number): void {
-  const { source } = context
-  advancePositionWithMutation(context, source, numberOfCharacters)
-  context.source = source.slice(numberOfCharacters)
-}
+  let endIndex = context.source.length
 
-/**
- * posの計算をする  
- * 引数でもらったposのオブジェクトを破壊的に更新する
- */
-function advancePositionWithMutation(
-  pos: Position,
-  source: string,
-  numberOfCharacters: number = source.length
-): Position {
-  let linesCount = 0
-  let lastNewLinePos = -1
-  for (let i = 0; i < numberOfCharacters; i++) {
-    if (source.charCodeAt(i) === 10 /* newline char code */) {
-      linesCount++
-      lastNewLinePos = i
+  for (let i = 0; i < endTokens.length; i++) {
+    const index = context.source.indexOf(endTokens[i], 1) // １は指定した文字列以降で該当文字を調べる
+    if (index !== -1 && endIndex > index) {
+      endIndex = index
     }
   }
 
-  pos.offset += numberOfCharacters
-  pos.line += linesCount
+  const start = getCursor(context) // loc用
+  // endIndexの情報をもとにTextデータをパースする
+  const content = parseTextData(context, endIndex)
 
-  // columnは改行されると0になる
-  /*
-    Hello worldのwで考える
-    -> この場合はcolumn = 7
-    Hello\nworldのwは改行されてるのでcolumn = 0
-  */
-  // columnの初期値は1でoffsetは0なので、同じ行の場合は1ずつズレる
-  pos.column =
-    lastNewLinePos === -1
-      ? pos.column + numberOfCharacters
-      : numberOfCharacters - lastNewLinePos
-
-  return pos
-}
-
-function getCursor(context: ParserContext): Position {
-  const { column, line, offset } = context
-  return { column, line, offset }
-}
-
-function getSelection(
-  context: ParserContext,
-  start: Position,
-  end?: Position,
-): SourceLocation {
-  end = end || getCursor(context)
   return {
-    start,
-    end,
-    source: context.originalSource.slice(start.offset, end.offset)
+    type: NodeTypes.TEXT,
+    content,
+    loc: getSelection(context, start),
   }
 }
 
 const enum TagType {
   Start,
-  End
+  End,
 }
 
 function parseElement(
   context: ParserContext,
   ancestors: ElementNode[],
 ): ElementNode | undefined {
-  // Start tag
+  // Start tag.
   const element = parseTag(context, TagType.Start) // TODO:
 
   // <img />のようなself closingの要素の場合はここで終了(childrenもendタグもないので)
@@ -277,7 +241,7 @@ function parseElement(
     return element
   }
 
-  // Children
+  // Children.
   ancestors.push(element)
   // parseChildの中でparseElementを呼ぶため再帰してる
   const children = parseChildren(context, ancestors)
@@ -285,7 +249,7 @@ function parseElement(
 
   element.children = children
 
-  // End tag
+  // End tag.
   if (startsWithEndTagOpen(context.source, element.tag)) {
     parseTag(context, TagType.End) // TODO:
   }
@@ -294,7 +258,7 @@ function parseElement(
 }
 
 function parseTag(context: ParserContext, type: TagType): ElementNode {
-  // Tag open
+  // Tag open.
   const start = getCursor(context)
   // htmlの開始または終了を検知する
   const match = /^<\/?([a-z][^\t\r\n\f />]*)/i.exec(context.source)!
@@ -303,10 +267,10 @@ function parseTag(context: ParserContext, type: TagType): ElementNode {
   advanceBy(context, match[0].length)
   advanceSpaces(context)
 
-  // Attributes
+  // Attributes.
   let props = parseAttributes(context, type)
 
-  // Tag close
+  // Tag close.
   let isSelfClosing = false
 
   // 属性まで読み進めた時点で、次が"/>"だった場合はSelfClosingとする
@@ -349,7 +313,6 @@ function parseAttributes(
 
     advanceSpaces(context) // スペースは読み飛ばす
   }
-
   return props
 }
 
@@ -366,7 +329,7 @@ function parseAttribute(
   context: ParserContext,
   nameSet: Set<string>,
 ): AttributeNode | DirectiveNode {
-  // Name
+  // Name.
   const start = getCursor(context)
   // htmlから属性を取得
   const match = /^[^\t\r\n\f />][^\t\r\n\f />=]*/.exec(context.source)!
@@ -386,29 +349,28 @@ function parseAttribute(
     value = parseAttributeValue(context)
   }
 
+  // directive
   const loc = getSelection(context, start)
-
   if (/^(v-[A-Za-z0-9-]|@)/.test(name)) {
     const match =
       /(?:^v-([a-z0-9-]+))?(?:(?::|^\.|^@|^#)(\[[^\]]+\]|[^\.]+))?(.+)?$/i.exec(
-        name
-      )!;
+        name,
+      )!
 
-    let dirName = match[1] || (startsWith(name, "@") ? "on" : "");
+    let dirName = match[1] || (startsWith(name, '@') ? 'on' : '')
 
-    let arg = "";
+    let arg = ''
 
-    if (match[2]) arg = match[2];
+    if (match[2]) arg = match[2]
 
     return {
       type: NodeTypes.DIRECTIVE,
       name: dirName,
-      exp: value?.content ?? "",
+      exp: value?.content ?? '',
       loc,
       arg,
-    };
+    }
   }
-
 
   return {
     type: NodeTypes.ATTRIBUTE,
@@ -421,10 +383,6 @@ function parseAttribute(
     loc,
   }
 }
-
-// 属性のvalueをパース
-// valueのクォートはシングルでもダブルでもパースできように実装していく
-// 頑張ってクォートで囲まれたvalueを取り出したりしているだけです
 
 /**
  * 属性のvalueをパース  
@@ -439,7 +397,7 @@ function parseAttributeValue(context: ParserContext): AttributeValue {
   const quote = context.source[0]
   const isQuoted = quote === `"` || quote === `'`
   if (isQuoted) {
-    // Quoted value
+    // Quoted value.
     advanceBy(context, 1)
 
     const endIndex = context.source.indexOf(quote)
@@ -455,16 +413,48 @@ function parseAttributeValue(context: ParserContext): AttributeValue {
     if (!match) {
       return undefined
     }
-
     content = parseTextData(context, match[0].length)
   }
 
   return { content, loc: getSelection(context, start) }
 }
 
-function advanceSpaces(context: ParserContext): void {
-  const match = /^[\t\r\n\f ]+/.exec(context.source)
-  if (match) {
-    advanceBy(context, match[0].length)
+// contentとlengthを元にtextを抽出する
+function parseTextData(context: ParserContext, length: number): string {
+  const rawText = context.source.slice(0, length)
+  advanceBy(context, length)
+  return rawText
+}
+
+function getCursor(context: ParserContext): Position {
+  const { column, line, offset } = context
+  return { column, line, offset }
+}
+
+function getSelection(
+  context: ParserContext,
+  start: Position,
+  end?: Position,
+): SourceLocation {
+  end = end || getCursor(context)
+  return {
+    start,
+    end,
+    source: context.originalSource.slice(start.offset, end.offset),
   }
+}
+
+function last<T>(xs: T[]): T | undefined {
+  return xs[xs.length - 1]
+}
+
+function startsWithEndTagOpen(source: string, tag: string): boolean {
+  return (
+    startsWith(source, '</') &&
+    // これ2じゃなくて1ではない？？
+    // sourceが<div>から始まって、tagが'div'だったら1が正しい気がする
+    source.slice(2, 2 + tag.length).toLowerCase() === tag.toLowerCase() &&
+    // ちゃんと>で閉じられてるか確認
+    /[\t\r\n\f />]/.test(source[2 + tag.length] || '>')
+  )
 }

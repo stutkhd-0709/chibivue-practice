@@ -15,8 +15,8 @@ export const enum NodeTypes {
 // locというのはlocationのことで、このNodeがソースコード（テンプレート文字列)のどこに該当するのか情報を保持する
 // 何行目のどこにあるかなど
 export interface Node {
-  type: NodeTypes,
-  loc: SourceLocation,
+  type: NodeTypes
+  loc: SourceLocation
 }
 
 // ElementのNode
@@ -28,6 +28,13 @@ export interface ElementNode extends Node {
   isSelfClosing: boolean // eg. <img /> => true
 }
 
+export interface TextNode extends Node {
+  type: NodeTypes.TEXT
+  content: string
+}
+
+export type TemplateChildNode = ElementNode | TextNode | InterpolationNode
+
 // ElementNodeが持つ属性
 // ただのRecord<string, string>と表現してもいいが
 // Vueに習って、name(string)とvalue(TextNode)を持つようにしてる
@@ -37,25 +44,13 @@ export interface AttributeNode extends Node {
   value: TextNode | undefined
 }
 
-export type TemplateChildNode = ElementNode | TextNode | InterpolationNode
-
-export interface TextNode extends Node {
-  type: NodeTypes.TEXT
-  content: string
-}
-
-export interface InterpolationNode extends Node {
-  type: NodeTypes.INTERPOLATION,
-  content: string // マスタッシュの中に記述された内容(今回はsetupで定義された単一の変数名が入る)
-}
-
 export interface DirectiveNode extends Node {
   type: NodeTypes.DIRECTIVE
   // v-name:arg="exp"という形で表す
   // eg. v-on:click="increment"の場合は、{ name: 'on', arg: 'click', exp="increment" }
   name: string
-  arg: string
   exp: string
+  arg: string
 }
 
 // locationの情報、Nodeはこの情報を持つ
@@ -71,4 +66,9 @@ export interface Position {
   offset: number // from start of file
   line: number
   column: number
+}
+
+export interface InterpolationNode extends Node {
+  type: NodeTypes.INTERPOLATION
+  content: string // マスタッシュの中に記述された内容(今回はsetupで定義された単一の変数名が入る)
 }

@@ -1,5 +1,6 @@
 <script>
 import { reactive } from 'chibivue'
+
 export default {
   setup() {
     const state = reactive({ message: 'Hello, chibivue!', input: '' })
@@ -13,7 +14,7 @@ export default {
     }
 
     return { state, changeMessage, handleInput }
-  }
+  },
 }
 </script>
 

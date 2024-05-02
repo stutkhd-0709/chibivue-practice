@@ -1,3 +1,4 @@
-export { baseCompile } from './compile'
-export { baseParse } from './parse'
-export { generate } from './codegen'
+export * from './codegen'
+export * from './compile'
+export * from './parse'
+export * from './ast'
